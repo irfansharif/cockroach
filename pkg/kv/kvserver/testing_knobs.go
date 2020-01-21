@@ -13,6 +13,7 @@ package kvserver
 import (
 	"time"
 
+	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/stateloader"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/storagebase"
 	"github.com/cockroachdb/cockroach/pkg/kv/kvserver/txnwait"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
@@ -235,6 +236,10 @@ type StoreTestingKnobs struct {
 	// RangeFeedPushTxnsAge overrides the default value for
 	// rangefeed.Config.PushTxnsAge.
 	RangeFeedPushTxnsAge time.Duration
+
+	// If set, use the following truncated state type when bootstrapping ranges.
+	// This is used for testing the Migrate command.
+	TruncatedStateTypeOverride *stateloader.TruncatedStateType
 }
 
 // ModuleTestingKnobs is part of the base.ModuleTestingKnobs interface.

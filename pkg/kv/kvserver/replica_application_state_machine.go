@@ -649,6 +649,7 @@ func (b *replicaAppBatch) runPreApplyTriggersAfterStagingWriteBatch(
 	if res.State != nil && res.State.TruncatedState != nil {
 		if apply, err := handleTruncatedStateBelowRaft(
 			ctx, b.state.TruncatedState, res.State.TruncatedState, b.r.raftMu.stateLoader, b.batch,
+			b.r.ClusterSettings().Version.IsActive(ctx, clusterversion.VersionNoLegacyTruncatedAndAppliedState),
 		); err != nil {
 			return wrapWithNonDeterministicFailure(err, "unable to handle truncated state")
 		} else if !apply {

@@ -209,7 +209,7 @@ func TestBootstrapCluster(t *testing.T) {
 	e := storage.NewDefaultInMem()
 	defer e.Close()
 	if _, err := bootstrapCluster(
-		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(),
+		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(), base.TestingKnobs{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestBootstrapNewStore(t *testing.T) {
 	ctx := context.Background()
 	e := storage.NewDefaultInMem()
 	if _, err := bootstrapCluster(
-		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(),
+		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(), base.TestingKnobs{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestNodeJoin(t *testing.T) {
 	engineStopper.AddCloser(e)
 
 	if _, err := bootstrapCluster(
-		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(),
+		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(), base.TestingKnobs{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestCorruptedClusterID(t *testing.T) {
 	defer e.Close()
 
 	if _, err := bootstrapCluster(
-		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(),
+		ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(), base.TestingKnobs{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -736,7 +736,7 @@ func TestStartNodeWithLocality(t *testing.T) {
 		e := storage.NewDefaultInMem()
 		defer e.Close()
 		if _, err := bootstrapCluster(
-			ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(),
+			ctx, []storage.Engine{e}, clusterversion.TestingClusterVersion, zonepb.DefaultZoneConfigRef(), zonepb.DefaultSystemZoneConfigRef(), base.TestingKnobs{},
 		); err != nil {
 			t.Fatal(err)
 		}

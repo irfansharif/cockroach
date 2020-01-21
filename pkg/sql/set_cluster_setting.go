@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/internal/client"
+	"github.com/cockroachdb/cockroach/pkg/roachpb"
 	"github.com/cockroachdb/cockroach/pkg/security"
 	"github.com/cockroachdb/cockroach/pkg/server/telemetry"
 	"github.com/cockroachdb/cockroach/pkg/settings"
@@ -39,6 +40,8 @@ type setClusterSettingNode struct {
 	setting settings.WritableSetting
 	// If value is nil, the setting should be reset.
 	value tree.TypedExpr
+
+	upgradeHook func(ctx context.Context, newV roachpb.Version) error
 }
 
 // SetClusterSetting sets session variables.
@@ -100,7 +103,7 @@ func (p *planner) SetClusterSetting(
 		}
 	}
 
-	return &setClusterSettingNode{name: name, st: st, setting: setting, value: value}, nil
+	return &setClusterSettingNode{name: name, st: st, setting: setting, value: value, upgradeHook: p.execCfg.VersionUpgradeHook}, nil
 }
 
 func (n *setClusterSettingNode) startExec(params runParams) error {
@@ -129,7 +132,8 @@ func (n *setClusterSettingNode) startExec(params runParams) error {
 			}
 			reportedValue = tree.AsStringWithFlags(value, tree.FmtBareStrings)
 			var prev tree.Datum
-			if _, ok := n.setting.(*settings.StateMachineSetting); ok {
+			_, isSetVersion := n.setting.(*settings.StateMachineSetting)
+			if isSetVersion {
 				datums, err := execCfg.InternalExecutor.QueryRowEx(
 					ctx, "retrieve-prev-setting", txn,
 					sqlbase.InternalExecutorSessionDataOverride{User: security.RootUser},
@@ -152,6 +156,17 @@ func (n *setClusterSettingNode) startExec(params runParams) error {
 			if err != nil {
 				return err
 			}
+
+			if isSetVersion {
+				// toSettingString already validated the input and that we are
+				// allowed to transition.
+				s := string(*value.(*tree.DString))
+				newV := roachpb.MustParseVersion(s)
+				if err := n.upgradeHook(ctx, newV); err != nil {
+					return err
+				}
+			}
+
 			if _, err = execCfg.InternalExecutor.ExecEx(
 				ctx, "update-setting", txn,
 				sqlbase.InternalExecutorSessionDataOverride{User: security.RootUser},

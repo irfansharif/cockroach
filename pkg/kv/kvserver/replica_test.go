@@ -264,6 +264,7 @@ func (tc *testContext) StartWithStoreConfigAndVersion(
 				nil, /* initialValues */
 				bootstrapVersion,
 				1 /* numStores */, nil /* splits */, cfg.Clock.PhysicalNow(),
+				cfg.TestingKnobs,
 			); err != nil {
 				t.Fatal(err)
 			}
