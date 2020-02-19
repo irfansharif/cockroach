@@ -225,6 +225,11 @@ func (r *Replica) traceEntries(ents []raftpb.Entry, event string) {
 	}
 }
 
+func (r *Replica) traceEntriesv2(ents []raftpb.Entry, event string) {
+	ids := extractIDs(nil, ents)
+	traceProposals(r, ids, event)
+}
+
 // traceMessageSends records the provided event for all proposals contained in
 // in entries contained in msgs. The vmodule level for raft must be at
 // least 1.

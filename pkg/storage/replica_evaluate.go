@@ -413,7 +413,9 @@ func evaluateCommand(
 			MaxKeys: maxKeys,
 			Stats:   ms,
 		}
+		log.Event(ctx, "pre-cmd Eval")
 		pd, err = cmd.Eval(ctx, batch, cArgs, reply)
+		log.Event(ctx, "post-cmd Eval")
 	} else {
 		err = errors.Errorf("unrecognized command %s", args.Method())
 	}

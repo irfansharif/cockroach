@@ -115,6 +115,7 @@ func (r *Replica) evalAndPropose(
 	}
 
 	idKey := makeIDKey()
+	log.Event(ctx, "evaluating request")
 	proposal, pErr := r.requestToProposal(ctx, idKey, ba, spans)
 	log.Event(proposal.ctx, "evaluated request")
 
@@ -228,7 +229,9 @@ func (r *Replica) evalAndPropose(
 		}
 	}
 
+	log.Event(ctx, "proposing request")
 	maxLeaseIndex, pErr := r.propose(ctx, proposal)
+	log.Event(ctx, "slated proposal")
 	if pErr != nil {
 		return nil, nil, 0, pErr
 	}
@@ -582,6 +585,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	if err := appTask.AckCommittedEntriesBeforeApplication(ctx, lastIndex); err != nil {
 		return stats, err.(*nonDeterministicFailure).safeExpl, err
 	}
+	// XXX: This area for applications (async). Uses forked context from the
+	// proposal. Forked in appTask.Decode.
 
 	// Separate the MsgApp messages from all other Raft message types so that we
 	// can take advantage of the optimization discussed in the Raft thesis under
@@ -640,6 +645,8 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	r.traceMessageSends(msgApps, "sending msgApp")
 	r.sendRaftMessages(ctx, msgApps)
 
+	// XXX: This area for batch commit (detached context).
+
 	// Use a more efficient write-only batch because we don't need to do any
 	// reads from the batch. Any reads are performed via the "distinct" batch
 	// which passes the reads through to the underlying DB.
@@ -650,6 +657,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	writer := batch.Distinct()
 	prevLastIndex := lastIndex
 	if len(rd.Entries) > 0 {
+		r.traceEntriesv2(rd.Entries, "pre-entry append")
 		// All of the entries are appended to distinct keys, returning a new
 		// last index.
 		thinEntries, sideLoadedEntriesSize, err := r.maybeSideloadEntriesRaftMuLocked(ctx, rd.Entries)
@@ -664,6 +672,7 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 			const expl = "during append"
 			return stats, expl, errors.Wrap(err, expl)
 		}
+		r.traceEntriesv2(rd.Entries, "post-entry append")
 	}
 	if !raft.IsEmptyHardState(rd.HardState) {
 		if !r.IsInitialized() && rd.HardState.Commit != 0 {
@@ -697,9 +706,19 @@ func (r *Replica) handleRaftReadyRaftMuLocked(
 	// were not persisted to disk, it wouldn't be a problem because raft does not
 	// infer the that entries are persisted on the node that sends a snapshot.
 	commitStart := timeutil.Now()
+	debug := false
+	if !batch.Empty() {
+		debug = true
+	}
+	if debug {
+		r.traceEntriesv2(rd.Entries, "pre-entry batch.Commit")
+	}
 	if err := batch.Commit(rd.MustSync && !disableSyncRaftLog.Get(&r.store.cfg.Settings.SV)); err != nil {
 		const expl = "while committing batch"
 		return stats, expl, errors.Wrap(err, expl)
+	}
+	if debug {
+		r.traceEntriesv2(rd.Entries, "post-entry batch.Commit")
 	}
 	if rd.MustSync {
 		elapsed := timeutil.Since(commitStart)

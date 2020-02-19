@@ -435,7 +435,7 @@ func (b *replicaAppBatch) Stage(cmdI apply.Command) (apply.CheckedCommand, error
 		cmd.raftCmd.WriteBatch = nil
 		cmd.raftCmd.LogicalOpLog = nil
 	} else {
-		log.Event(ctx, "applying command")
+		log.Event(ctx, "applying command") // XXX:
 	}
 
 	// Acquire the split or merge lock, if necessary. If a split or merge
@@ -511,9 +511,11 @@ func (b *replicaAppBatch) stageWriteBatch(ctx context.Context, cmd *replicatedCm
 	} else {
 		b.mutations += mutations
 	}
+	log.Event(ctx, "applying batch repr")
 	if err := b.batch.ApplyBatchRepr(wb.Data, false); err != nil {
 		return wrapWithNonDeterministicFailure(err, "unable to apply WriteBatch")
 	}
+	log.Event(ctx, "applied batch repr")
 	return nil
 }
 

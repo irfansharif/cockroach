@@ -194,6 +194,7 @@ func (r *Replica) executeWriteBatch(
 					log.Warning(ctx, err)
 				}
 			}
+			log.Event(ctx, "captured proposal result")
 			return propResult.Reply, propResult.Err
 		case <-slowTimer.C:
 			slowTimer.Read = true

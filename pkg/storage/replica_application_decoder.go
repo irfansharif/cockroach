@@ -12,6 +12,7 @@ package storage
 
 import (
 	"context"
+	"github.com/cockroachdb/cockroach/pkg/util/log"
 
 	"github.com/cockroachdb/cockroach/pkg/storage/apply"
 	"github.com/cockroachdb/cockroach/pkg/util/quotapool"
@@ -140,6 +141,7 @@ func (d *replicaDecoder) createTracingSpans(ctx context.Context) {
 		if cmd.IsLocal() {
 			parentCtx = cmd.proposal.ctx
 		}
+		log.Event(parentCtx, "forking span for application")
 		cmd.ctx, cmd.sp = tracing.ForkCtxSpan(parentCtx, "raft application")
 	}
 }
