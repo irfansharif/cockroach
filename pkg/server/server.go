@@ -750,6 +750,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 		RoleMemberCache:         &sql.MembershipCache{},
 		TestingKnobs:            sqlExecutorTestingKnobs,
 		VersionUpgradeHook: func(ctx context.Context, newV roachpb.Version) error {
+			// XXX: Figure out what we need "leases" for.
 			if !s.st.Version.ActiveVersionOrEmpty(ctx).Less(newV) {
 				return nil
 			}
@@ -758,8 +759,8 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 			req.Key = keys.LocalMax
 			req.EndKey = keys.MaxKey
 			b.AddRawRequest(&req)
-			// TODO(tbg): make sure all stores have synced once to persist any
-			// raft command applications.
+			// XXX: Tobi's comment: make sure all stores have synced once to
+			// persist any raft command applications.
 			return errors.Wrap(s.db.Run(ctx, &b), "while preparing version upgrade")
 		},
 
@@ -1703,6 +1704,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	// bunch 19.1, 20.1
 	if err := migMgr.EnsureMigrations(ctx, bootstrapVersion); err != nil {
 		select {
 		case <-s.stopper.ShouldQuiesce():
