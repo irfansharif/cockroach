@@ -297,8 +297,7 @@ func MakeExternalStorage(
 		telemetry.Count("external-io.google_cloud")
 		return makeGCSStorage(ctx, conf, dest.GoogleCloudConfig, settings)
 	case roachpb.ExternalStorageProvider_Azure:
-		telemetry.Count("external-io.azure")
-		return makeAzureStorage(dest.AzureConfig, settings)
+	    panic("unsupported")
 	case roachpb.ExternalStorageProvider_Workload:
 		telemetry.Count("external-io.workload")
 		return makeWorkloadStorage(dest.WorkloadConfig)

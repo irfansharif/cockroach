@@ -18,7 +18,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
 	"syscall"
 )
 
@@ -43,22 +42,6 @@ func ExitStatus(err *exec.ExitError) int {
 	// ExitStatus method with an identical signature, so no need for conditional
 	// compilation.
 	return err.Sys().(syscall.WaitStatus).ExitStatus()
-}
-
-const refreshSignal = syscall.SIGHUP
-
-// RefreshSignaledChan returns a channel that will receive an os.Signal whenever
-// the process receives a "refresh" signal (currently SIGHUP). A refresh signal
-// indicates that the user wants to apply nondisruptive updates, like reloading
-// certificates and flushing log files.
-//
-// On Windows, the returned channel will never receive any values, as Windows
-// does not support signals. Consider exposing a refresh trigger through other
-// means if Windows support is important.
-func RefreshSignaledChan() <-chan os.Signal {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, refreshSignal)
-	return ch
 }
 
 // IsErrConnectionReset returns true if an

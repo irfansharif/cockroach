@@ -46,3 +46,17 @@ func StatAndLinkCount(path string) (os.FileInfo, int64, error) {
 func IsCrossDeviceLinkErrno(errno error) bool {
 	return errno == syscall.EXDEV
 }
+
+// RefreshSignaledChan returns a channel that will receive an os.Signal whenever
+// the process receives a "refresh" signal (currently SIGHUP). A refresh signal
+// indicates that the user wants to apply nondisruptive updates, like reloading
+// certificates and flushing log files.
+//
+// On Windows, the returned channel will never receive any values, as Windows
+// does not support signals. Consider exposing a refresh trigger through other
+// means if Windows support is important.
+func RefreshSignaledChan() <-chan os.Signal {
+	ch := make(chan os.Signal, 1)
+	return ch
+}
+
