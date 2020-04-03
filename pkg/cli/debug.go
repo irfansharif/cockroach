@@ -157,16 +157,7 @@ func OpenEngine(dir string, stopper *stop.Stopper, opts OpenEngineOptions) (stor
 		db, err = storage.NewPebble(context.Background(), cfg)
 
 	case enginepb.EngineTypeRocksDB:
-		cache := storage.NewRocksDBCache(server.DefaultCacheSize)
-		defer cache.Release()
-
-		cfg := storage.RocksDBConfig{
-			StorageConfig: storageConfig,
-			MaxOpenFiles:  maxOpenFiles,
-			ReadOnly:      opts.ReadOnly,
-		}
-
-		db, err = storage.NewRocksDB(cfg, cache)
+		return nil, errors.New("unsupported")
 	}
 
 	if err != nil {
@@ -594,7 +585,7 @@ https://github.com/facebook/rocksdb/wiki/Administration-and-Data-Access-Tool#ldb
 	// TODO(mberhault): support encrypted stores.
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		storage.RunLDB(args)
+	    panic("unsupported")
 	},
 }
 
@@ -616,7 +607,7 @@ Runs the RocksDB 'sst_dump' tool
 	// TODO(mberhault): support encrypted stores.
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		storage.RunSSTDump(args)
+	    panic("unsupported")
 	},
 }
 

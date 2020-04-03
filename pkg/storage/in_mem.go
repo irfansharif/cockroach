@@ -28,10 +28,8 @@ func NewInMem(
 	switch engine {
 	case enginepb.EngineTypeTeePebbleRocksDB:
 		return newTeeInMem(ctx, attrs, cacheSize)
-	case enginepb.EngineTypePebble:
+	case enginepb.EngineTypeDefault, enginepb.EngineTypePebble:
 		return newPebbleInMem(ctx, attrs, cacheSize)
-	case enginepb.EngineTypeDefault, enginepb.EngineTypeRocksDB:
-		return newRocksDBInMem(attrs, cacheSize)
 	}
 	panic(fmt.Sprintf("unknown engine type: %d", engine))
 }

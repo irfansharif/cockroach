@@ -23,7 +23,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/server/debug/pprofui"
 	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/settings/cluster"
-	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/cockroach/pkg/util/stop"
 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
@@ -161,7 +160,7 @@ func NewServer(st *cluster.Settings, hbaConfDebugFn http.HandlerFunc) *Server {
 
 	mux.HandleFunc("/debug/threads", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Add("Content-type", "text/plain")
-		fmt.Fprint(w, storage.ThreadStacks())
+		fmt.Fprint(w, "unsupported")
 	})
 
 	return &Server{

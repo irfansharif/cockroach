@@ -8,31 +8,27 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
+// +build !js
+
 package storage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/cockroachdb/cockroach/pkg/base"
 	"github.com/cockroachdb/cockroach/pkg/roachpb"
-	"github.com/cockroachdb/cockroach/pkg/settings"
 	"github.com/cockroachdb/cockroach/pkg/storage/enginepb"
 	"github.com/cockroachdb/cockroach/pkg/storage/fs"
 	"github.com/cockroachdb/cockroach/pkg/util"
-	"github.com/cockroachdb/cockroach/pkg/util/envutil"
 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
 	"github.com/cockroachdb/cockroach/pkg/util/humanizeutil"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
@@ -56,23 +52,6 @@ import (
 // #include <stdlib.h>
 // #include <libroach.h>
 import "C"
-
-var minWALSyncInterval = settings.RegisterDurationSetting(
-	"rocksdb.min_wal_sync_interval",
-	"minimum duration between syncs of the RocksDB WAL",
-	0*time.Millisecond,
-)
-
-var rocksdbConcurrency = envutil.EnvOrDefaultInt(
-	"COCKROACH_ROCKSDB_CONCURRENCY", func() int {
-		// Use up to min(numCPU, 4) threads for background RocksDB compactions per
-		// store.
-		const max = 4
-		if n := runtime.NumCPU(); n <= max {
-			return n
-		}
-		return max
-	}())
 
 // Set to true to perform expensive iterator debug leak checking. In normal
 // operation, we perform inexpensive iterator leak checking but those checks do
@@ -135,300 +114,6 @@ func prettyPrintKey(cKey C.DBKey) *C.char {
 		},
 	}
 	return C.CString(mvccKey.String())
-}
-
-const (
-	// RecommendedMaxOpenFiles is the recommended value for RocksDB's
-	// max_open_files option.
-	RecommendedMaxOpenFiles = 10000
-	// MinimumMaxOpenFiles is the minimum value that RocksDB's max_open_files
-	// option can be set to. While this should be set as high as possible, the
-	// minimum total for a single store node must be under 2048 for Windows
-	// compatibility. See:
-	// https://wpdev.uservoice.com/forums/266908-command-prompt-console-bash-on-ubuntu-on-windo/suggestions/17310124-add-ability-to-change-max-number-of-open-files-for
-	MinimumMaxOpenFiles = 1700
-)
-
-// SSTableInfo contains metadata about a single sstable. Note this mirrors
-// the C.DBSSTable struct contents.
-type SSTableInfo struct {
-	Level int
-	Size  int64
-	Start MVCCKey
-	End   MVCCKey
-}
-
-// SSTableInfos is a slice of SSTableInfo structures.
-type SSTableInfos []SSTableInfo
-
-func (s SSTableInfos) Len() int {
-	return len(s)
-}
-
-func (s SSTableInfos) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-
-func (s SSTableInfos) Less(i, j int) bool {
-	switch {
-	case s[i].Level < s[j].Level:
-		return true
-	case s[i].Level > s[j].Level:
-		return false
-	case s[i].Size > s[j].Size:
-		return true
-	case s[i].Size < s[j].Size:
-		return false
-	default:
-		return s[i].Start.Less(s[j].Start)
-	}
-}
-
-func (s SSTableInfos) String() string {
-	const (
-		KB = 1 << 10
-		MB = 1 << 20
-		GB = 1 << 30
-		TB = 1 << 40
-	)
-
-	roundTo := func(val, to int64) int64 {
-		return (val + to/2) / to
-	}
-
-	// We're intentionally not using humanizeutil here as we want a slightly more
-	// compact representation.
-	humanize := func(size int64) string {
-		switch {
-		case size < MB:
-			return fmt.Sprintf("%dK", roundTo(size, KB))
-		case size < GB:
-			return fmt.Sprintf("%dM", roundTo(size, MB))
-		case size < TB:
-			return fmt.Sprintf("%dG", roundTo(size, GB))
-		default:
-			return fmt.Sprintf("%dT", roundTo(size, TB))
-		}
-	}
-
-	type levelInfo struct {
-		size  int64
-		count int
-	}
-
-	var levels []*levelInfo
-	for _, t := range s {
-		for i := len(levels); i <= t.Level; i++ {
-			levels = append(levels, &levelInfo{})
-		}
-		info := levels[t.Level]
-		info.size += t.Size
-		info.count++
-	}
-
-	var maxSize int
-	var maxLevelCount int
-	for _, info := range levels {
-		size := len(humanize(info.size))
-		if maxSize < size {
-			maxSize = size
-		}
-		count := 1 + int(math.Log10(float64(info.count)))
-		if maxLevelCount < count {
-			maxLevelCount = count
-		}
-	}
-	levelFormat := fmt.Sprintf("%%d [ %%%ds %%%dd ]:", maxSize, maxLevelCount)
-
-	level := -1
-	var buf bytes.Buffer
-	var lastSize string
-	var lastSizeCount int
-
-	flushLastSize := func() {
-		if lastSizeCount > 0 {
-			fmt.Fprintf(&buf, " %s", lastSize)
-			if lastSizeCount > 1 {
-				fmt.Fprintf(&buf, "[%d]", lastSizeCount)
-			}
-			lastSizeCount = 0
-		}
-	}
-
-	maybeFlush := func(newLevel, i int) {
-		if level == newLevel {
-			return
-		}
-		flushLastSize()
-		if buf.Len() > 0 {
-			buf.WriteString("\n")
-		}
-		level = newLevel
-		if level >= 0 {
-			info := levels[level]
-			fmt.Fprintf(&buf, levelFormat, level, humanize(info.size), info.count)
-		}
-	}
-
-	for i, t := range s {
-		maybeFlush(t.Level, i)
-		size := humanize(t.Size)
-		if size == lastSize {
-			lastSizeCount++
-		} else {
-			flushLastSize()
-			lastSize = size
-			lastSizeCount = 1
-		}
-	}
-
-	maybeFlush(-1, 0)
-	return buf.String()
-}
-
-// ReadAmplification returns RocksDB's worst case read amplification, which is
-// the number of level-0 sstables plus the number of levels, other than level 0,
-// with at least one sstable.
-//
-// This definition comes from here:
-// https://github.com/facebook/rocksdb/wiki/RocksDB-Tuning-Guide#level-style-compaction
-func (s SSTableInfos) ReadAmplification() int {
-	var readAmp int
-	seenLevel := make(map[int]bool)
-	for _, t := range s {
-		if t.Level == 0 {
-			readAmp++
-		} else if !seenLevel[t.Level] {
-			readAmp++
-			seenLevel[t.Level] = true
-		}
-	}
-	return readAmp
-}
-
-// SSTableInfosByLevel maintains slices of SSTableInfo objects, one
-// per level. The slice for each level contains the SSTableInfo
-// objects for SSTables at that level, sorted by start key.
-type SSTableInfosByLevel struct {
-	// Each level is a slice of SSTableInfos.
-	levels [][]SSTableInfo
-}
-
-// NewSSTableInfosByLevel returns a new SSTableInfosByLevel object
-// based on the supplied SSTableInfos slice.
-func NewSSTableInfosByLevel(s SSTableInfos) SSTableInfosByLevel {
-	var result SSTableInfosByLevel
-	for _, t := range s {
-		for i := len(result.levels); i <= t.Level; i++ {
-			result.levels = append(result.levels, []SSTableInfo{})
-		}
-		result.levels[t.Level] = append(result.levels[t.Level], t)
-	}
-	// Sort each level by start key.
-	for _, l := range result.levels {
-		sort.Slice(l, func(i, j int) bool { return l[i].Start.Less(l[j].Start) })
-	}
-	return result
-}
-
-// MaxLevel returns the maximum level for which there are SSTables.
-func (s *SSTableInfosByLevel) MaxLevel() int {
-	return len(s.levels) - 1
-}
-
-// MaxLevelSpanOverlapsContiguousSSTables returns the maximum level at
-// which the specified key span overlaps either none, one, or at most
-// two contiguous SSTables. Level 0 is returned if no level qualifies.
-//
-// This is useful when considering when to merge two compactions. In
-// this case, the method is called with the "gap" between the two
-// spans to be compacted. When the result is that the gap span touches
-// at most two SSTables at a high level, it suggests that merging the
-// two compactions is a good idea (as the up to two SSTables touched
-// by the gap span, due to containing endpoints of the existing
-// compactions, would be rewritten anyway).
-//
-// As an example, consider the following sstables in a small database:
-//
-// Level 0.
-//  {Level: 0, Size: 20, Start: key("a"), End: key("z")},
-//  {Level: 0, Size: 15, Start: key("a"), End: key("k")},
-// Level 2.
-//  {Level: 2, Size: 200, Start: key("a"), End: key("j")},
-//  {Level: 2, Size: 100, Start: key("k"), End: key("o")},
-//  {Level: 2, Size: 100, Start: key("r"), End: key("t")},
-// Level 6.
-//  {Level: 6, Size: 201, Start: key("a"), End: key("c")},
-//  {Level: 6, Size: 200, Start: key("d"), End: key("f")},
-//  {Level: 6, Size: 300, Start: key("h"), End: key("r")},
-//  {Level: 6, Size: 405, Start: key("s"), End: key("z")},
-//
-// - The span "a"-"c" overlaps only a single SSTable at the max level
-//   (L6). That's great, so we definitely want to compact that.
-// - The span "s"-"t" overlaps zero SSTables at the max level (L6).
-//   Again, great! That means we're going to compact the 3rd L2
-//   SSTable and maybe push that directly to L6.
-func (s *SSTableInfosByLevel) MaxLevelSpanOverlapsContiguousSSTables(span roachpb.Span) int {
-	// Note overlapsMoreTHanTwo should not be called on level 0, where
-	// the SSTables are not guaranteed disjoint.
-	overlapsMoreThanTwo := func(tables []SSTableInfo) bool {
-		// Search to find the first sstable which might overlap the span.
-		i := sort.Search(len(tables), func(i int) bool { return span.Key.Compare(tables[i].End.Key) < 0 })
-		// If no SSTable is overlapped, return false.
-		if i == -1 || i == len(tables) || span.EndKey.Compare(tables[i].Start.Key) < 0 {
-			return false
-		}
-		// Return true if the span is not subsumed by the combination of
-		// this sstable and the next. This logic is complicated and is
-		// covered in the unittest. There are three successive conditions
-		// which together ensure the span doesn't overlap > 2 SSTables.
-		//
-		// - If the first overlapped SSTable is the last.
-		// - If the span does not exceed the end of the next SSTable.
-		// - If the span does not overlap the start of the next next SSTable.
-		if i >= len(tables)-1 {
-			// First overlapped SSTable is the last (right-most) SSTable.
-			//    Span:   [c-----f)
-			//    SSTs: [a---d)
-			// or
-			//    SSTs: [a-----------q)
-			return false
-		}
-		if span.EndKey.Compare(tables[i+1].End.Key) <= 0 {
-			// Span does not reach outside of this SSTable's right neighbor.
-			//    Span:    [c------f)
-			//    SSTs: [a---d) [e-f) ...
-			return false
-		}
-		if i >= len(tables)-2 {
-			// Span reaches outside of this SSTable's right neighbor, but
-			// there are no more SSTables to the right.
-			//    Span:    [c-------------x)
-			//    SSTs: [a---d) [e---q)
-			return false
-		}
-		if span.EndKey.Compare(tables[i+2].Start.Key) <= 0 {
-			// There's another SSTable two to the right, but the span doesn't
-			// reach into it.
-			//    Span:    [c------------x)
-			//    SSTs: [a---d) [e---q) [x--z) ...
-			return false
-		}
-
-		// Touching at least three SSTables.
-		//    Span:    [c-------------y)
-		//    SSTs: [a---d) [e---q) [x--z) ...
-		return true
-	}
-	// Note that we never consider level 0, where SSTables can overlap.
-	// Level 0 is instead returned as a catch-all which means that there
-	// is no level where the span overlaps only two or fewer SSTables.
-	for i := len(s.levels) - 1; i > 0; i-- {
-		if !overlapsMoreThanTwo(s.levels[i]) {
-			return i
-		}
-	}
-	return 0
 }
 
 // RocksDBCache is a wrapper around C.DBCache
@@ -2820,10 +2505,6 @@ func goPartialMerge(existing, update []byte) ([]byte, error) {
 	return cStringToGoBytes(result), nil
 }
 
-func emptyKeyError() error {
-	return errors.Errorf("attempted access to empty key")
-}
-
 func dbPut(rdb *C.DBEngine, key MVCCKey, value []byte) error {
 	if len(key.Key) == 0 {
 		return emptyKeyError()
@@ -3298,14 +2979,6 @@ func (r *RocksDB) LinkFile(oldname, newname string) error {
 	return nil
 }
 
-// IsValidSplitKey returns whether the key is a valid split key. Certain key
-// ranges cannot be split (the meta1 span and the system DB span); split keys
-// chosen within any of these ranges are considered invalid. And a split key
-// equal to Meta2KeyMax (\x03\xff\xff) is considered invalid.
-func IsValidSplitKey(key roachpb.Key) bool {
-	return bool(C.MVCCIsValidSplitKey(goToCSlice(key)))
-}
-
 // lockFile sets a lock on the specified file using RocksDB's file locking interface.
 func lockFile(filename string) (C.DBFileLock, error) {
 	var lock C.DBFileLock
@@ -3320,45 +2993,6 @@ func lockFile(filename string) (C.DBFileLock, error) {
 // unlockFile unlocks the file asscoiated with the specified lock and GCs any allocated memory for the lock.
 func unlockFile(lock C.DBFileLock) error {
 	return statusToError(C.DBUnlockFile(lock))
-}
-
-// MVCCScanDecodeKeyValue decodes a key/value pair returned in an MVCCScan
-// "batch" (this is not the RocksDB batch repr format), returning both the
-// key/value and the suffix of data remaining in the batch.
-func MVCCScanDecodeKeyValue(repr []byte) (key MVCCKey, value []byte, orepr []byte, err error) {
-	k, ts, value, orepr, err := enginepb.ScanDecodeKeyValue(repr)
-	return MVCCKey{k, ts}, value, orepr, err
-}
-
-// MVCCScanDecodeKeyValues decodes all key/value pairs returned in one or more
-// MVCCScan "batches" (this is not the RocksDB batch repr format). The provided
-// function is called for each key/value pair.
-func MVCCScanDecodeKeyValues(repr [][]byte, fn func(key MVCCKey, rawBytes []byte) error) error {
-	var k MVCCKey
-	var rawBytes []byte
-	var err error
-	for _, data := range repr {
-		for len(data) > 0 {
-			k, rawBytes, data, err = MVCCScanDecodeKeyValue(data)
-			if err != nil {
-				return err
-			}
-			if err = fn(k, rawBytes); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func notFoundErrOrDefault(err error) error {
-	errStr := err.Error()
-	if strings.Contains(errStr, "No such") ||
-		strings.Contains(errStr, "not found") ||
-		strings.Contains(errStr, "cannot find") {
-		return os.ErrNotExist
-	}
-	return err
 }
 
 // rocksdbWritableFile implements the File interface. It is used to interact with the

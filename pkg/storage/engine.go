@@ -11,9 +11,13 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"path/filepath"
+	"github.com/cockroachdb/cockroach/pkg/keys"
+	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/base"
@@ -525,33 +529,7 @@ func NewEngine(
 	engine enginepb.EngineType, cacheSize int64, storageConfig base.StorageConfig,
 ) (Engine, error) {
 	switch engine {
-	case enginepb.EngineTypeTeePebbleRocksDB:
-		pebbleConfig := PebbleConfig{
-			StorageConfig: storageConfig,
-			Opts:          DefaultPebbleOptions(),
-		}
-		pebbleConfig.Opts.Cache = pebble.NewCache(cacheSize)
-		defer pebbleConfig.Opts.Cache.Unref()
-
-		pebbleConfig.Dir = filepath.Join(pebbleConfig.Dir, "pebble")
-		cache := NewRocksDBCache(cacheSize)
-		defer cache.Release()
-
-		ctx := context.Background()
-		pebbleDB, err := NewPebble(ctx, pebbleConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		rocksDBConfig := RocksDBConfig{StorageConfig: storageConfig}
-		rocksDBConfig.Dir = filepath.Join(rocksDBConfig.Dir, "rocksdb")
-		rocksDB, err := NewRocksDB(rocksDBConfig, cache)
-		if err != nil {
-			return nil, err
-		}
-
-		return NewTee(ctx, rocksDB, pebbleDB), nil
-	case enginepb.EngineTypePebble:
+	case enginepb.EngineTypeDefault, enginepb.EngineTypePebble:
 		pebbleConfig := PebbleConfig{
 			StorageConfig: storageConfig,
 			Opts:          DefaultPebbleOptions(),
@@ -560,13 +538,6 @@ func NewEngine(
 		defer pebbleConfig.Opts.Cache.Unref()
 
 		return NewPebble(context.Background(), pebbleConfig)
-	case enginepb.EngineTypeDefault, enginepb.EngineTypeRocksDB:
-		cache := NewRocksDBCache(cacheSize)
-		defer cache.Release()
-
-		return NewRocksDB(
-			RocksDBConfig{StorageConfig: storageConfig},
-			cache)
 	}
 	panic(fmt.Sprintf("unknown engine type: %d", engine))
 }
@@ -774,3 +745,102 @@ func iterateOnReader(
 	}
 	return nil
 }
+
+func emptyKeyError() error {
+	return errors.Errorf("attempted access to empty key")
+}
+
+// MVCCScanDecodeKeyValue decodes a key/value pair returned in an MVCCScan
+// "batch" (this is not the RocksDB batch repr format), returning both the
+// key/value and the suffix of data remaining in the batch.
+func MVCCScanDecodeKeyValue(repr []byte) (key MVCCKey, value []byte, orepr []byte, err error) {
+	k, ts, value, orepr, err := enginepb.ScanDecodeKeyValue(repr)
+	return MVCCKey{k, ts}, value, orepr, err
+}
+
+// MVCCScanDecodeKeyValues decodes all key/value pairs returned in one or more
+// MVCCScan "batches" (this is not the RocksDB batch repr format). The provided
+// function is called for each key/value pair.
+func MVCCScanDecodeKeyValues(repr [][]byte, fn func(key MVCCKey, rawBytes []byte) error) error {
+	var k MVCCKey
+	var rawBytes []byte
+	var err error
+	for _, data := range repr {
+		for len(data) > 0 {
+			k, rawBytes, data, err = MVCCScanDecodeKeyValue(data)
+			if err != nil {
+				return err
+			}
+			if err = fn(k, rawBytes); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func notFoundErrOrDefault(err error) error {
+	errStr := err.Error()
+	if strings.Contains(errStr, "No such") ||
+			strings.Contains(errStr, "not found") ||
+			strings.Contains(errStr, "cannot find") {
+		return os.ErrNotExist
+	}
+	return err
+}
+
+var minWALSyncInterval = settings.RegisterDurationSetting(
+	"rocksdb.min_wal_sync_interval",
+	"minimum duration between syncs of the RocksDB WAL",
+	0*time.Millisecond,
+)
+
+var rocksdbConcurrency = envutil.EnvOrDefaultInt(
+	"COCKROACH_ROCKSDB_CONCURRENCY", func() int {
+		// Use up to min(numCPU, 4) threads for background RocksDB compactions per
+		// store.
+		const max = 4
+		if n := runtime.NumCPU(); n <= max {
+			return n
+		}
+		return max
+	}())
+
+
+// IsValidSplitKey returns whether the key is a valid split key. Certain key
+// ranges cannot be split (the meta1 span and the system DB span); split keys
+// chosen within any of these ranges are considered invalid. And a split key
+// equal to Meta2KeyMax (\x03\xff\xff) is considered invalid.
+//
+// Revived from https://github.com/cockroachdb/cockroach/pull/18718.
+func IsValidSplitKey(key roachpb.Key) bool {
+	if keys.Meta2KeyMax.Equal(key) {
+		// We do not allow splits at Meta2KeyMax. The reason for this is that range
+		// decriptors are stored at RangeMetaKey(range.EndKey), so the new range
+		// that ends at Meta2KeyMax would naturally store its decriptor at
+		// RangeMetaKey(Meta2KeyMax) = Meta1KeyMax. However, Meta1KeyMax already
+		// serves a different role of holding a second copy of the descriptor for
+		// the range that spans the meta2/userspace boundary (see case 3a in
+		// rangeAddressing). If we allowed splits at Meta2KeyMax, the two roles
+		// would overlap. See #1206.
+		return false
+	}
+	for _, span := range keys.NoSplitSpans {
+		if bytes.Compare(key, span.Key) > 0 && bytes.Compare(key, span.EndKey) < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+const (
+	// RecommendedMaxOpenFiles is the recommended value for RocksDB's
+	// max_open_files option.
+	RecommendedMaxOpenFiles = 10000
+	// MinimumMaxOpenFiles is the minimum value that RocksDB's max_open_files
+	// option can be set to. While this should be set as high as possible, the
+	// minimum total for a single store node must be under 2048 for Windows
+	// compatibility. See:
+	// https://wpdev.uservoice.com/forums/266908-command-prompt-console-bash-on-ubuntu-on-windo/suggestions/17310124-add-ability-to-change-max-number-of-open-files-for
+	MinimumMaxOpenFiles = 1700
+)

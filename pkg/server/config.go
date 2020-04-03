@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -432,18 +431,14 @@ func (cfg *Config) CreateEngines(ctx context.Context) (Engines, error) {
 
 	var details []string
 
-	var cache storage.RocksDBCache
 	var pebbleCache *pebble.Cache
-	if cfg.StorageEngine == enginepb.EngineTypePebble || cfg.StorageEngine == enginepb.EngineTypeTeePebbleRocksDB {
+	if cfg.StorageEngine == enginepb.EngineTypePebble || cfg.StorageEngine == enginepb.EngineTypeDefault {
 		details = append(details, fmt.Sprintf("Pebble cache size: %s", humanizeutil.IBytes(cfg.CacheSize)))
 		pebbleCache = pebble.NewCache(cfg.CacheSize)
 		defer pebbleCache.Unref()
 	}
-	if cfg.StorageEngine == enginepb.EngineTypeDefault ||
-		cfg.StorageEngine == enginepb.EngineTypeRocksDB || cfg.StorageEngine == enginepb.EngineTypeTeePebbleRocksDB {
-		details = append(details, fmt.Sprintf("RocksDB cache size: %s", humanizeutil.IBytes(cfg.CacheSize)))
-		cache = storage.NewRocksDBCache(cfg.CacheSize)
-		defer cache.Release()
+	if cfg.StorageEngine == enginepb.EngineTypeRocksDB || cfg.StorageEngine == enginepb.EngineTypeTeePebbleRocksDB {
+	    return nil, errors.New("unsupported")
 	}
 
 	var physicalStores int
@@ -515,54 +510,15 @@ func (cfg *Config) CreateEngines(ctx context.Context) (Engines, error) {
 				UseFileRegistry: spec.UseFileRegistry,
 				ExtraOptions:    spec.ExtraOptions,
 			}
-			if cfg.StorageEngine == enginepb.EngineTypePebble {
-				// TODO(itsbilal): Tune these options, and allow them to be overridden
-				// in the spec (similar to the existing spec.RocksDBOptions and others).
-				pebbleConfig := storage.PebbleConfig{
-					StorageConfig: storageConfig,
-					Opts:          storage.DefaultPebbleOptions(),
-				}
-				pebbleConfig.Opts.Cache = pebbleCache
-				pebbleConfig.Opts.MaxOpenFiles = int(openFileLimitPerStore)
-				eng, err = storage.NewPebble(ctx, pebbleConfig)
-			} else if cfg.StorageEngine == enginepb.EngineTypeRocksDB || cfg.StorageEngine == enginepb.EngineTypeDefault {
-				rocksDBConfig := storage.RocksDBConfig{
-					StorageConfig:           storageConfig,
-					MaxOpenFiles:            openFileLimitPerStore,
-					WarnLargeBatchThreshold: 500 * time.Millisecond,
-					RocksDBOptions:          spec.RocksDBOptions,
-				}
-
-				eng, err = storage.NewRocksDB(rocksDBConfig, cache)
-			} else {
-				// cfg.StorageEngine == enginepb.EngineTypeTeePebbleRocksDB
-				pebbleConfig := storage.PebbleConfig{
-					StorageConfig: storageConfig,
-					Opts:          storage.DefaultPebbleOptions(),
-				}
-				pebbleConfig.Dir = filepath.Join(pebbleConfig.Dir, "pebble")
-				pebbleConfig.Opts.Cache = pebbleCache
-				pebbleConfig.Opts.MaxOpenFiles = int(openFileLimitPerStore)
-				pebbleEng, err := storage.NewPebble(ctx, pebbleConfig)
-				if err != nil {
-					return nil, err
-				}
-
-				rocksDBConfig := storage.RocksDBConfig{
-					StorageConfig:           storageConfig,
-					MaxOpenFiles:            openFileLimitPerStore,
-					WarnLargeBatchThreshold: 500 * time.Millisecond,
-					RocksDBOptions:          spec.RocksDBOptions,
-				}
-				rocksDBConfig.Dir = filepath.Join(rocksDBConfig.Dir, "rocksdb")
-
-				rocksdbEng, err := storage.NewRocksDB(rocksDBConfig, cache)
-				if err != nil {
-					return nil, err
-				}
-
-				eng = storage.NewTee(ctx, rocksdbEng, pebbleEng)
+			// TODO(itsbilal): Tune these options, and allow them to be overridden
+			// in the spec (similar to the existing spec.RocksDBOptions and others).
+			pebbleConfig := storage.PebbleConfig{
+				StorageConfig: storageConfig,
+				Opts:          storage.DefaultPebbleOptions(),
 			}
+			pebbleConfig.Opts.Cache = pebbleCache
+			pebbleConfig.Opts.MaxOpenFiles = int(openFileLimitPerStore)
+			eng, err = storage.NewPebble(ctx, pebbleConfig)
 			if err != nil {
 				return Engines{}, err
 			}

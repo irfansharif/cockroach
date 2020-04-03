@@ -13,7 +13,6 @@ package cli
 import (
 	"context"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/cockroachdb/cockroach/pkg/base"
@@ -24,7 +23,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroach/pkg/storage"
 	"github.com/cockroachdb/cockroach/pkg/util/log"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -68,7 +66,7 @@ func initCLIDefaults() {
 	// the standard input is a terminal.
 	cliCtx.isInteractive = false
 	// See also setCLIDefaultForTests() in cli_test.go.
-	cliCtx.terminalOutput = isatty.IsTerminal(os.Stdout.Fd())
+	cliCtx.terminalOutput = false
 	cliCtx.tableDisplayFormat = tableDisplayTSV
 	if cliCtx.terminalOutput {
 		// See also setCLIDefaultForTests() in cli_test.go.

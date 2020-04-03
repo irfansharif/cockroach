@@ -38,7 +38,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/util/log"
 	"github.com/cockroachdb/errors"
 	readline "github.com/knz/go-libedit"
-	isatty "github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -1481,7 +1480,7 @@ func checkInteractive() {
 	// and we'll also assume that there is no human if the standard
 	// input is not terminal-like -- likely redirected from a file,
 	// etc.
-	cliCtx.isInteractive = len(sqlCtx.execStmts) == 0 && isatty.IsTerminal(os.Stdin.Fd())
+	cliCtx.isInteractive = len(sqlCtx.execStmts) == 0
 }
 
 func runTerm(cmd *cobra.Command, args []string) error {

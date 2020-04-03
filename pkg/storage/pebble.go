@@ -505,7 +505,8 @@ func newTeeInMem(ctx context.Context, attrs roachpb.Attributes, cacheSize int64)
 	// rocksdb. This is to make sure the file paths match up, and that we're
 	// able to write to both and ingest from both memory filesystems.
 	pebbleInMem := newPebbleInMem(ctx, attrs, cacheSize)
-	rocksDBInMem := newRocksDBInMem(attrs, cacheSize)
+	//rocksDBInMem := newRocksDBInMem(attrs, cacheSize)
+	rocksDBInMem := newPebbleInMem(ctx, attrs, cacheSize)
 	tee := NewTee(ctx, rocksDBInMem, pebbleInMem)
 	return tee
 }

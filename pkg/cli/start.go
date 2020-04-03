@@ -905,9 +905,6 @@ If problems persist, please see ` + base.DocsURL("cluster-setup-troubleshooting.
 			}
 			msgDouble := "Note: a second interrupt will skip graceful shutdown and terminate forcefully"
 			fmt.Fprintln(os.Stdout, msgDouble)
-
-		case quitSignal:
-			log.DumpStacks(shutdownCtx)
 		}
 
 		// Start the draining process in a separate goroutine so that it
@@ -1188,7 +1185,6 @@ func setupAndInitializeLoggingAndProfiling(
 				// for the storage engines. We need to do this at the end
 				// because we need to register the loggers.
 				stopper.AddCloser(storage.InitPebbleLogger(ctx))
-				stopper.AddCloser(storage.InitRocksDBLogger(ctx))
 			}
 		}()
 	}
