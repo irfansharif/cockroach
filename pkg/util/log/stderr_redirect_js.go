@@ -1,4 +1,4 @@
-// Copyright 2018 The Cockroach Authors.
+// Copyright 2017 The Cockroach Authors.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt.
@@ -8,15 +8,19 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-// +build !windows,!js
+// +build !windows,!unix
 
-package cli
+package log
 
 import (
-	"os"
-
-	"golang.org/x/sys/unix"
+    "os"
+    "syscall"
 )
 
-// exitSignals are the signals that will cause workload to exit.
-var exitSignals = []os.Signal{unix.SIGINT, unix.SIGTERM}
+func dupFD(fd uintptr) (uintptr, error) {
+    return 0, syscall.ENOTSUP
+}
+
+func redirectStderr(f *os.File) error {
+    return syscall.ENOTSUP
+}

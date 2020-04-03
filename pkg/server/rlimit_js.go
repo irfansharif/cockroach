@@ -1,4 +1,4 @@
-// Copyright 2018 The Cockroach Authors.
+// Copyright 2017 The Cockroach Authors.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt.
@@ -8,15 +8,18 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-// +build !windows,!js
+// +build !windows,!freebsd,!dragonfly,!darwin,!unix
 
-package cli
+package server
 
 import (
-	"os"
-
-	"golang.org/x/sys/unix"
+    "syscall"
 )
 
-// exitSignals are the signals that will cause workload to exit.
-var exitSignals = []os.Signal{unix.SIGINT, unix.SIGTERM}
+func setRlimitNoFile(limits *rlimit) error {
+    return syscall.ENOTSUP
+}
+
+func getRlimitNoFile(limits *rlimit) error {
+    return syscall.ENOTSUP
+}

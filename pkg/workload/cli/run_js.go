@@ -8,15 +8,13 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-// +build !windows,!js
+// +build !windows,!unix
 
 package cli
 
 import (
-	"os"
-
-	"golang.org/x/sys/unix"
+    "os"
 )
 
 // exitSignals are the signals that will cause workload to exit.
-var exitSignals = []os.Signal{unix.SIGINT, unix.SIGTERM}
+var exitSignals = []os.Signal{}
