@@ -1,4 +1,4 @@
-// +build !js
+// +build !js,!hack
 
 package storage
 

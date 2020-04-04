@@ -440,8 +440,7 @@ func NewServer(cfg Config, stopper *stop.Stopper) (*Server, error) {
 			// If record file exists, we invoke CleanupTempDirs to
 			// also remove the record after the temp directory is
 			// removed.
-			recordPath := filepath.Join(firstStore.Path, TempDirsRecordFilename)
-			err = storage.CleanupTempDirs(recordPath)
+			err = errors.New("unimplemented")
 		}
 		if err != nil {
 			log.Errorf(context.TODO(), "could not remove temporary store directory: %v", err.Error())
