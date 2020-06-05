@@ -839,11 +839,16 @@ func TestSnapshotAfterTruncation(t *testing.T) {
 func TestSnapshotAfterTruncationWithUncommittedTail(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	ctx := context.Background()
+
+	storeCfg := kvserver.TestStoreConfig(nil)
+	storeCfg.Clock = nil // manual clock
+
 	mtc := &multiTestContext{
 		// This test was written before the multiTestContext started creating many
 		// system ranges at startup, and hasn't been update to take that into
 		// account.
 		startWithSingleRange: true,
+		storeConfig:          &storeCfg,
 	}
 	defer mtc.Stop()
 	mtc.Start(t, 3)
@@ -865,6 +870,12 @@ func TestSnapshotAfterTruncationWithUncommittedTail(t *testing.T) {
 		t.Fatal(pErr)
 	}
 
+	// XXX: Ratcheting clock invalidates leases, and node continually considers
+	// itself not live. ...
+	// All leases in the system will have been expired. Writes will be blocked.
+	// Are lease transfer requests unable to go through? Also consider that node
+	// liveness leases are expiration, not epoch based. And when extending
+	// liveness, we may be only extending it to a future expired point.
 	mtc.replicateRange(1, 1, 2)
 	mtc.waitForValues(key, []int64{incA, incA, incA})
 
@@ -2951,7 +2962,11 @@ func TestReplicaGCRace(t *testing.T) {
 }
 
 func requireOnlyAtomicChanges(
-	t *testing.T, db *sqlutils.SQLRunner, rangeID roachpb.RangeID, repFactor int, start time.Time,
+	t *testing.T,
+	db *sqlutils.SQLRunner,
+	rangeID roachpb.RangeID,
+	repFactor int,
+	start time.Time,
 ) {
 	// From all events pertaining to the given rangeID and post-dating the start time,
 	// filter out those infos which indicate a (full and incoming) voter count in

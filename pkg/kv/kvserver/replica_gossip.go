@@ -55,6 +55,13 @@ func (r *Replica) gossipFirstRange(ctx context.Context) {
 // inherently inconsistent and asynchronous, we're using the lease as a way to
 // ensure that only one node gossips at a time.
 func (r *Replica) shouldGossip() bool {
+	// XXX: What if this is always untrue? Because is clock ratcheted forward,
+	// leaving timestamp behind. And the replica doesn't gossip it's liveness
+	// updates. Only the leaseholder should be gossiping liveness updates, but
+	// nobody is. If nobody is considered live because everyone's clock keeps
+	// getting ratched up so frequently, all liveness heartbeats fail. If all
+	// liveness heartbeats fail, no leases are in the system. If no leases are
+	// in the system, all writes will be blocked.
 	return r.OwnsValidLease(r.store.Clock().Now())
 }
 
@@ -138,11 +145,13 @@ func (r *Replica) MaybeGossipSystemConfigIfHaveFailure(ctx context.Context) erro
 // against what's already in gossip and only gossips records which
 // are out of date.
 func (r *Replica) MaybeGossipNodeLiveness(ctx context.Context, span roachpb.Span) error {
+	//log.Warningf(ctx, "XXX: gossipping node liveness")
 	if r.store.Gossip() == nil || !r.IsInitialized() {
 		return nil
 	}
 
 	if !r.ContainsKeyRange(span.Key, span.EndKey) || !r.shouldGossip() {
+		log.Warningf(ctx, "XXX: deciding not to gossip")
 		return nil
 	}
 

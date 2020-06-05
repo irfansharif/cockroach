@@ -108,6 +108,7 @@ func (r *Replica) sendWithRangeID(
 		log.Fatalf(ctx, "don't know how to handle command %s", ba)
 	}
 	if pErr != nil {
+		//log.Warningf(ctx, "XXX: replica.Send got error: %s", pErr)
 		log.Eventf(ctx, "replica.Send got error: %s", pErr)
 	} else {
 		if filter := r.store.cfg.TestingKnobs.TestingResponseFilter; filter != nil {
@@ -190,6 +191,9 @@ func (r *Replica) executeBatchWithConcurrencyRetries(
 			// For lease commands, use the provided previous lease for verification.
 			status.Lease = ba.GetPrevLeaseForLeaseRequest()
 			status.Timestamp = r.Clock().Now()
+			log.Warningf(ctx, "XXX: %s, with prev lease %s", ba.Summary(), status.Lease.String())
+			// XXX: What if I'm requesting a lease, working off of a previous
+			// lease, but in the process some other lease expires?
 		} else {
 			// If the request is a write or a consistent read, it requires the
 			// range lease or permission to serve via follower reads.

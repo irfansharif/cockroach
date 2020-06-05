@@ -73,6 +73,13 @@ func (r *Replica) executeWriteBatch(
 	// successfully propose as the lease will presumably have changed, but what
 	// if we hit an error during evaluation (e.g. a ConditionFailedError)?
 
+	// XXX: Does the above apply?
+	// - What does r.readOnlyCmdMu safeguard? Does the error go away if we
+	// safeguard against it? I don't think we're concerned about the read path.
+	// - What does ConditionFailedError trigger, and are we running into it?
+	// - We're no longer relying on lease being present during evaluation. Why
+	// not? Does that affect things? Do we pause somewhere as a result?
+
 	// Verify that the batch can be executed.
 	// NB: we only need to check that the request is in the Range's key bounds
 	// at proposal time, not at application time, because the spanlatch manager
@@ -124,6 +131,7 @@ func (r *Replica) executeWriteBatch(
 		curLeaseCpy := curLease // avoid letting curLease escape
 		err := newNotLeaseHolderError(&curLeaseCpy, r.store.StoreID(), r.Desc())
 		log.VEventf(ctx, 2, "%s before proposing: %s", err, ba.Summary())
+		log.Warningf(ctx, "XXX: %s before proposing: %s", err, ba.Summary())
 		return nil, g, roachpb.NewError(err)
 	}
 

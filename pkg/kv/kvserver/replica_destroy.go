@@ -184,6 +184,7 @@ func (r *Replica) disconnectReplicationRaftMuLocked(ctx context.Context) {
 	defer r.readOnlyCmdMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	log.Info(ctx, "XXX: replica being disconnected")
 	// NB: In the very rare scenario that we're being removed but currently
 	// believe we are the leaseholder and there are more requests waiting for
 	// quota than total quota then failure to close the proposal quota here could

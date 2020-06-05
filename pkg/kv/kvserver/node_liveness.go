@@ -473,7 +473,7 @@ func (nl *NodeLiveness) StartHeartbeat(
 			}
 			// Give the context a timeout approximately as long as the time we
 			// have left before our liveness entry expires.
-			if err := contextutil.RunWithTimeout(ctx, "node liveness heartbeat", nl.livenessThreshold-nl.heartbeatInterval,
+			if err := contextutil.RunWithTimeout(ctx, "node liveness heartbeat "+nl.livenessThreshold.String()+" -- "+nl.heartbeatInterval.String(), nl.livenessThreshold-nl.heartbeatInterval,
 				func(ctx context.Context) error {
 					// Retry heartbeat in the event the conditional put fails.
 					for r := retry.StartWithCtx(ctx, retryOpts); r.Next(); {
@@ -493,7 +493,9 @@ func (nl *NodeLiveness) StartHeartbeat(
 					}
 					return nil
 				}); err != nil {
-				log.Warningf(ctx, "failed node liveness heartbeat: %+v", err)
+				log.Warningf(ctx, "XXX: failed node liveness heartbeat: %+v", err)
+			} else {
+				log.Warningf(ctx, "XXX: succeeded node liveness heartbeat")
 			}
 
 			nl.heartbeatToken <- struct{}{}
@@ -603,6 +605,9 @@ func (nl *NodeLiveness) heartbeatInternal(
 	{
 		update.Expiration = hlc.LegacyTimestamp(
 			nl.clock.Now().Add((nl.livenessThreshold).Nanoseconds(), 0))
+		// XXX: Are we only extending lease to a point where we're going to get
+		// expired again?
+		log.Warningf(ctx, "XXX: heartbeating liveness, setting expiry to %s", update.Expiration.String())
 		// This guards against the system clock moving backwards. As long
 		// as the cockroach process is running, checks inside hlc.Clock
 		// will ensure that the clock never moves backwards, but these
@@ -884,7 +889,7 @@ func (nl *NodeLiveness) updateLivenessAttempt(
 				},
 			},
 		})
-		return txn.Run(ctx, b)
+		return txn.Run(ctx, b) // XXX: Blocks.
 	}); err != nil {
 		if tErr := (*roachpb.ConditionFailedError)(nil); errors.As(err, &tErr) {
 			if handleCondFailed != nil {

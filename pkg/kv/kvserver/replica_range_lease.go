@@ -948,6 +948,7 @@ func (r *Replica) redirectOnOrAcquireLease(
 						if log.V(2) {
 							log.Infof(ctx, "extending lease %s at %s", status.Lease, timestamp)
 						}
+						log.Warningf(ctx, "XXX: extending lease %s at %s", status.Lease, timestamp)
 						// We had an active lease to begin with, but we want to trigger
 						// a lease extension. We explicitly ignore the returned handle
 						// as we won't block on it.
@@ -958,6 +959,7 @@ func (r *Replica) redirectOnOrAcquireLease(
 			case kvserverpb.LeaseState_EXPIRED:
 				// No active lease: Request renewal if a renewal is not already pending.
 				log.VEventf(ctx, 2, "request range lease (attempt #%d)", attempt)
+				log.Warningf(ctx, "XXX: request range lease (attempt #%d)", attempt)
 				return r.requestLeaseLocked(ctx, status), nil
 
 			case kvserverpb.LeaseState_PROSCRIBED:
@@ -966,6 +968,7 @@ func (r *Replica) redirectOnOrAcquireLease(
 				// owns the lease, re-request. Otherwise, redirect.
 				if status.Lease.OwnedBy(r.store.StoreID()) {
 					log.VEventf(ctx, 2, "request range lease (attempt #%d)", attempt)
+					log.Warningf(ctx, "XXX: request range lease (attempt #%d)", attempt)
 					return r.requestLeaseLocked(ctx, status), nil
 				}
 				// If lease is currently held by another, redirect to holder.
@@ -988,7 +991,8 @@ func (r *Replica) redirectOnOrAcquireLease(
 		pErr = func() (pErr *roachpb.Error) {
 			slowTimer := timeutil.NewTimer()
 			defer slowTimer.Stop()
-			slowTimer.Reset(base.SlowRequestThreshold)
+			//slowTimer.Reset(base.SlowRequestThreshold)
+			slowTimer.Reset(5 * time.Second)
 			tBegin := timeutil.Now()
 			for {
 				select {
@@ -1000,6 +1004,7 @@ func (r *Replica) redirectOnOrAcquireLease(
 							// applied locally through a snapshot: the RequestLeaseRequest
 							// cannot be reproposed so we get this ambiguity.
 							// We'll just loop around.
+							log.Warningf(ctx, "XXX: lease acquisition has to retry: %+v", pErr)
 							return nil
 						case *roachpb.LeaseRejectedError:
 							if tErr.Existing.OwnedBy(r.store.StoreID()) {
@@ -1025,9 +1030,11 @@ func (r *Replica) redirectOnOrAcquireLease(
 							}
 							pErr = roachpb.NewError(err)
 						}
+						log.Warningf(ctx, "XXX: lease acquisition failed: %+v", pErr)
 						return pErr
 					}
 					log.Eventf(ctx, "lease acquisition succeeded: %+v", status.Lease)
+					log.Warningf(ctx, "XXX: lease acquisition succeeded: %+v", status.Lease)
 					return nil
 				case <-slowTimer.C:
 					slowTimer.Read = true
@@ -1041,6 +1048,7 @@ func (r *Replica) redirectOnOrAcquireLease(
 				case <-ctx.Done():
 					llHandle.Cancel()
 					log.VErrEventf(ctx, 2, "lease acquisition failed: %s", ctx.Err())
+					log.Warningf(ctx, "XXX: lease acquisition failed: %s", ctx.Err())
 					return roachpb.NewError(newNotLeaseHolderError(nil, r.store.StoreID(), r.Desc()))
 				case <-r.store.Stopper().ShouldStop():
 					llHandle.Cancel()

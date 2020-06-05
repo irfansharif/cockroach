@@ -869,6 +869,7 @@ func (m *multiTestContext) addStore(idx int) {
 	ambient := log.AmbientContext{Tracer: cfg.Settings.Tracer}
 	m.populateDB(idx, cfg.Settings, stopper)
 	nlActive, nlRenewal := cfg.NodeLivenessDurations()
+	ambient.AddLogTag(fmt.Sprintf("l%d", idx+1), nil) // XXX: Remove.
 	m.nodeLivenesses[idx] = kvserver.NewNodeLiveness(
 		ambient, m.clocks[idx], m.dbs[idx], m.gossips[idx],
 		nlActive, nlRenewal, cfg.Settings, metric.TestSampleInterval,
@@ -1416,8 +1417,8 @@ func (m *multiTestContext) advanceClock(ctx context.Context) {
 			log.Fatalf(ctx, "clock at index %d is different from the shared clock", i)
 		}
 	}
-	m.manualClock.Increment(m.storeConfig.LeaseExpiration())
 	log.Infof(ctx, "test clock advanced to: %s", m.clock().Now())
+	m.manualClock.Increment(m.storeConfig.LeaseExpiration())
 }
 
 // getRaftLeader returns the replica that is the current raft leader for the

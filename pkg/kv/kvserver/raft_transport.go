@@ -395,6 +395,7 @@ func (t *RaftTransport) RaftSnapshot(stream MultiRaft_RaftSnapshotServer) error 
 	if err := t.stopper.RunAsyncTask(
 		stream.Context(), "storage.RaftTransport: processing snapshot",
 		func(ctx context.Context) {
+			//log.Warningf(ctx, "XXX: snapshot got here")
 			errCh <- func() error {
 				req, err := stream.Recv()
 				if err != nil {
