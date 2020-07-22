@@ -58,7 +58,7 @@ func initJepsen(ctx context.Context, t *test, c *cluster) {
 	// so do it before the initialization check for ease of iteration.
 	if err := c.GitClone(
 		ctx, t.l,
-		"https://github.com/cockroachdb/jepsen", "/mnt/data1/jepsen", "tc-nightly", controller,
+		"https://github.com/irfansharif/jepsen", "/mnt/data1/jepsen", "200722.jepsen-join", controller,
 	); err != nil {
 		t.Fatal(err)
 	}
