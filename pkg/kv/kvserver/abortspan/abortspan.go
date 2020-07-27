@@ -134,6 +134,7 @@ func (sc *AbortSpan) Put(
 	entry *roachpb.AbortSpanEntry,
 ) error {
 	key := keys.AbortSpanKey(sc.rangeID, txnID)
+	// check version, if version active, entry.tracked = true else false
 	return storage.MVCCPutProto(ctx, readWriter, ms, key, hlc.Timestamp{}, nil /* txn */, entry)
 }
 

@@ -54,7 +54,7 @@ import (
 // We know that old versions of CockroachDB sometimes violated this invariant,
 // but we want to exclude these violations, focusing only on cases in which we
 // know old CRDB versions (<19.1 at time of writing) were not involved.
-var fatalOnStatsMismatch = envutil.EnvOrDefaultBool("COCKROACH_ENFORCE_CONSISTENT_STATS", false)
+var fatalOnStatsMismatch = envutil.EnvOrDefaultBool("COCKROACH_ENFORCE_CONSISTENT_STATS", true)
 
 // ReplicaChecksum contains progress on a replica checksum computation.
 type ReplicaChecksum struct {
@@ -174,6 +174,7 @@ func (r *Replica) CheckConsistency(
 		d2 := delta
 		d2.AgeTo(0)
 		haveDelta = d2 != enginepb.MVCCStats{}
+		log.Warningf(ctx, "xxx: haveDelta=%t delta=%s", haveDelta, d2.String())
 	}
 
 	res.StartKey = []byte(startKey)
@@ -234,6 +235,7 @@ func (r *Replica) CheckConsistency(
 			// consistent. Verify this only for clusters that started out on 19.1 or
 			// higher.
 			if !v.Less(roachpb.Version{Major: 19, Minor: 1}) {
+				// XXX: This is where we would fatal.
 				log.Fatalf(ctx, "found a delta of %+v", log.Safe(delta))
 			}
 		}
@@ -520,7 +522,7 @@ func (r *Replica) computeChecksumDone(
 			c.Checksum = result.SHA512[:]
 
 			delta := result.PersistedMS
-			delta.Subtract(result.RecomputedMS)
+			delta.Subtract(result.RecomputedMS) // XXX: This is where the delta is being computed.
 			c.Delta = enginepb.MVCCStatsDelta(delta)
 			c.Persisted = result.PersistedMS
 		}
@@ -638,6 +640,19 @@ func (r *Replica) sha512(
 		return nil, errors.New("no range applied state found")
 	}
 	result.PersistedMS = rangeAppliedState.RangeStats.ToStats()
+
+	// XXX: This is where any difference between PersistedMS and RecomputedMS
+	// would turn up, if there are no estimates.
+
+	{
+		stats := result.PersistedMS
+		stats.Subtract(result.RecomputedMS)
+		stats.AgeTo(0)
+		delta := enginepb.MVCCStatsDelta(stats)
+		if delta.ContainsEstimates <= 0 && (delta != enginepb.MVCCStatsDelta{}) {
+			log.Warningf(ctx, "xxx: inconsistent stats=%s delta=%s", stats.String(), delta.String())
+		}
+	}
 
 	if statsOnly {
 		b, err := protoutil.Marshal(rangeAppliedState)
