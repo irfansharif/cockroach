@@ -1122,6 +1122,7 @@ func (s *Server) Start(ctx context.Context) error {
 				// after a new one.
 				return
 			}
+			log.Infof(ctx, "xxx: writing version %s", newCV)
 			if err := kvserver.WriteClusterVersionToEngines(ctx, s.engines, newCV); err != nil {
 				log.Fatalf(ctx, "%v", err)
 			}
@@ -1135,6 +1136,7 @@ func (s *Server) Start(ctx context.Context) error {
 		// now, or if the process crashed earlier half-way through the callback,
 		// that version won't be on all engines. For that reason, we backfill
 		// once.
+		log.Infof(ctx, "xxx: writing version %s", diskClusterVersion)
 		if err := kvserver.WriteClusterVersionToEngines(
 			ctx, s.engines, diskClusterVersion,
 		); err != nil {
@@ -1302,8 +1304,8 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}
 
-	// TODO(irfansharif): How far down can this be deferred to?
-	_ = startGossipFn()
+	// TODO(irfansharif): How late can we defer gossip start to?
+	startGossipFn()
 	if s.cfg.DelayedBootstrapFn != nil {
 		defer time.AfterFunc(30*time.Second, s.cfg.DelayedBootstrapFn).Stop()
 	}
