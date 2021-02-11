@@ -20,6 +20,7 @@ go_binary(
 go_test(
     name = "cockroach-oss_test",
     size = "medium",
+    tags = ["broken_in_bazel"],
     srcs = ["dep_test.go"],
     embed = [":cockroach-oss_lib"],
     deps = [
